@@ -54,8 +54,10 @@ int main( int argc, char *argv[ ] )
         
     m[0] = BGM_create( 3, 3, vet );
     m[1] = BGM_transposed( m[0]);
-    
+
+    puts("Matriz Original");
     showMatrix(m[0]);
+    puts("Matriz Transposta");
     showMatrix(m[1]);
     
     return 0;

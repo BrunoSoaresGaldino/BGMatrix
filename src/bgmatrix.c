@@ -6,22 +6,49 @@ BGM_error_t BGM_error;
 struct BGM_matrix_t
 {
     double   *elements;
-    uint16_t lines;
+    uint16_t rows;
     uint16_t columns;
 };
 
+static bool BGM_checkDimensions( BGM_matrix_t *a, BGM_matrix_t *b, BGM_operation_t op )
+{
+    switch (op)
+    {
+        case add:
+        case sub:
 
-BGM_matrix_t *BGM_create( uint16_t lines, uint16_t columns, double *elements )
+            if( a->rows != b->rows || a->columns != b->columns )
+            {
+                BGM_error = BGM_incorrectDimensions;
+                return false;
+            }
+            break;
+    
+        case mul:
+
+            if( a->columns != b->rows )
+            {
+                BGM_error = BGM_incorrectDimensions;
+                return false;
+            }
+            break;
+    }
+    
+
+    return true;
+}
+
+BGM_matrix_t *BGM_create( uint16_t rows, uint16_t columns, double *elements )
 {
     
     BGM_matrix_t *matrix;
-    size_t        size = lines * columns * sizeof(double);
+    size_t        size = rows * columns * sizeof(double);
     
     if( ( matrix = malloc( sizeof(BGM_matrix_t) ) ) )
     {
         if( ( matrix->elements = malloc( size ) ) )
         {
-            matrix->lines   = lines;
+            matrix->rows   = rows;
             matrix->columns = columns;
             
             if( elements )
@@ -42,14 +69,12 @@ BGM_matrix_t *BGM_create( uint16_t lines, uint16_t columns, double *elements )
     return NULL;
 }
 
-
 BGM_matrix_t *BGM_clone( BGM_matrix_t *matrix )
 {
 
-    return BGM_create( matrix->lines, matrix->columns, matrix->elements);   
+    return BGM_create( matrix->rows, matrix->columns, matrix->elements );   
 
 }
-
 
 void BGM_destroy( BGM_matrix_t *matrix )
 {
@@ -65,7 +90,6 @@ void BGM_destroyP( BGM_matrix_t ***matrix )
     BGM_destroy( **matrix );
 }
 
-
 double BGM_getElement( BGM_matrix_t *matrix, uint16_t i , uint16_t j )
 {
     return *( matrix->elements + i * matrix->columns + j );
@@ -79,9 +103,9 @@ void BGM_setElement( BGM_matrix_t *matrix, uint16_t i , uint16_t j , double elem
 }
 
 
-uint16_t BGM_lines( BGM_matrix_t *matrix )
+uint16_t BGM_rows( BGM_matrix_t *matrix )
 {
-    return matrix->lines;
+    return matrix->rows;
 }
 
 
@@ -90,8 +114,6 @@ uint16_t BGM_columns( BGM_matrix_t *matrix )
     return matrix->columns;
 }
 
-
-
 BGM_matrix_t *BGM_transposed( BGM_matrix_t *matrix )
 {   
     
@@ -99,27 +121,24 @@ BGM_matrix_t *BGM_transposed( BGM_matrix_t *matrix )
     
     if( new )
     {
-        BGM_swap( new->lines, new->columns );
-        
-        BGM_foreach( new, *(new->elements + i*new->columns + j ) = *( matrix->elements + j*matrix->columns + i ) );
+        BGM_swap( new->rows, new->columns );
+        BGM_foreach( new, *(new->elements + i * new->columns + j ) = *( matrix->elements + j * matrix->columns + i ) );
     }
     
     return new;
 }
 
-
 BGM_matrix_t *BGM_negative( BGM_matrix_t *matrix )
 {
     
     BGM_matrix_t *new = BGM_clone( matrix );
-    
+
     if( new )
     {
         BGM_foreach( new, *(new->elements + i * new->columns + j ) *= -1.0 );
     }
     
     return new;
-    
 }
 
 
@@ -127,9 +146,8 @@ BGM_matrix_t *BGM_sum( BGM_matrix_t *a, BGM_matrix_t *b )
 {
     BGM_matrix_t *c;
     
-    if( a->lines != b->lines || a->columns != b->columns )
+    if( !BGM_checkDimensions( a, b, add ) )
     {
-        BGM_error = BGM_incorrectDimensions;
         return NULL;
     }
    
@@ -146,9 +164,8 @@ BGM_matrix_t *BGM_difference( BGM_matrix_t *a, BGM_matrix_t *b )
 {
     BGM_matrix_t *c = NULL;
     
-    if( a->lines != b->lines || a->columns != b->columns )
+    if( !BGM_checkDimensions( a, b, sub ) )
     {
-        BGM_error = BGM_incorrectDimensions;
         return NULL;
     }
     
@@ -159,7 +176,6 @@ BGM_matrix_t *BGM_difference( BGM_matrix_t *a, BGM_matrix_t *b )
     
     return c;
 }
-
 
 BGM_matrix_t *BGM_scalarProduct( BGM_matrix_t *matrix, double k )
 {
@@ -174,21 +190,20 @@ BGM_matrix_t *BGM_scalarProduct( BGM_matrix_t *matrix, double k )
     return new;
 }
 
-BGM_matrix_t *BGM_product( BGM_matrix_t *a,BGM_matrix_t *b )
+BGM_matrix_t *BGM_product( BGM_matrix_t *a, BGM_matrix_t *b )
 {
-    BGM_matrix_t *c = NULL;
+    BGM_matrix_t *c;
     double        count;
     uint16_t      n;
     
-    if( a->columns != b->lines )
+    if( !BGM_checkDimensions( a, b, mul )  )
     {
-        BGM_error = BGM_incorrectDimensions;
-        return NULL;
+        return false;
     }
     
     n = a->columns;
     
-    if( (c = BGM_create( a->lines , b->columns, NULL ) ) )
+    if( (c = BGM_create( a->rows , b->columns, NULL ) ) )
     {
         BGM_foreach( c,
             
@@ -204,80 +219,93 @@ BGM_matrix_t *BGM_product( BGM_matrix_t *a,BGM_matrix_t *b )
         );
     }
     
-    return c;
-    
+    return c;   
 }
 
 double BGM_determinant( BGM_matrix_t *matrix )
 {
-    if( matrix->lines != matrix->columns )
+    double determinant;
+    
+    if( !(matrix = BGM_clone( matrix ) ) )
+    {
+        return 0.0;
+    }
+
+    if( matrix->rows != matrix->columns )
     {
         BGM_error = BGM_operationUndefined;
         return 0.0;
     }
     
-    if( BGM_isTriangular(matrix) )
+    if( matrix->rows == 2 )
     {
-        return BGM_diagonalProduct(matrix);
+        /*O determinante de uma matriz 2x2 é dado pela diferença do produto da diagonal principal com o produto da diagonal secundária*/
+        
+        return matrix->elements[0] * matrix->elements[3] - matrix->elements[1] * matrix->elements[2];
     }
-    else
+
+    if( !BGM_isTriangular(matrix) )/*se a matriz não for triangular faz-se uma série de operações até transformála em uma*/
     {
-        for( int j = 0 ; j < matrix->columns ; j++ )
+        for( uint16_t j = 0; j < matrix->columns - 1; j++ )
         {
-            for( int i = j+1; i < matrix->lines; i++ )
+            double elementA = BGM_getElement( matrix, j, j );
+
+            for( uint16_t i = j + 1; i < matrix->rows; i++  )
             {
-                double a = BGM_getElement(matrix,i,j);
-                double b = BGM_getElement(matrix,i-1,j);
-                int sign = ( ( b < 0 && a < 0 ) || ( b >= 0 && a >= 0 ) ) ? -1 : 1;
-                
-                if(a)
+                double elementB = BGM_getElement( matrix, i, j );
+                double factor;
+
+                if( elementB != 0 )/*se o elemento já é 0 não é necessário fazer nada*/
                 {
-                    for( int k = j; k < matrix->columns; k++ )
+                    factor = - elementB / elementA;
+        
+                    for( uint16_t col = 0; col < matrix->columns; col++ )
                     {
-                        double c = BGM_getElement(matrix, i, k );
-                        double d = BGM_getElement(matrix, i-1, k );
+                        double a = BGM_getElement( matrix, j, col );
+                        double b = BGM_getElement( matrix, i, col );
+                        double c = factor * a + b;
                         
-                        BGM_setElement( matrix,i, k, d + sign * ( b/a * c ) );
-                        
-                        
+                        BGM_setElement( matrix, i, col , c );
                     }
                 }
             }
         }
-        
-        return BGM_diagonalProduct(matrix);
     }
 
+    determinant = BGM_diagonalProduct(matrix);
+    BGM_destroy( matrix );
+
+    return determinant;
 }
 
 /*FUNÇÕES DE APOPIO*/
 
 bool BGM_isUpperTriangular( BGM_matrix_t *matrix )
 {   
-    if( matrix->lines != matrix->columns )
+    if( matrix->rows != matrix->columns )
     {
         BGM_error = BGM_operationUndefined;
         return false;
     }
     
-    if( matrix->lines == 0 )
+    if( matrix->rows == 0 )
     {
         BGM_error = BGM_nullMatrix;
         return false;
     }
     
-    if( matrix->lines == 1)
+    if( matrix->rows == 1)
     {
         return false;
     }
     
     
-    for( uint16_t i = 0 ; i < matrix->lines ; i++ )/*testa se é triangular superior*/
+    for( uint16_t i = 0 ; i < matrix->rows ; i++ )/*testa se é triangular superior*/
     {
         for( uint16_t j = i+1 ; j < matrix->columns; j++ )
         {
             /*se pelo menos um elemento acima da diagonal principal for != 0 a matriz não é triangular superior*/
-            if(  *( matrix->elements + i * matrix->lines + j ) )
+            if(  *( matrix->elements + i * matrix->rows + j ) )
             {
                 return false;
             }
@@ -292,29 +320,29 @@ bool BGM_isLowerTriangular( BGM_matrix_t *matrix )
     
     bool isTriangular = true;
     
-    if( matrix->lines != matrix->columns )
+    if( matrix->rows != matrix->columns )
     {
         BGM_error = BGM_operationUndefined;
         return false;
     }
 
-    if( matrix->lines == 0 )
+    if( matrix->rows == 0 )
     {
         BGM_error = BGM_nullMatrix;
         return false;
     }
     
-    if( matrix->lines == 1)
+    if( matrix->rows == 1)
     {
         return false;
     }
     
-    for( uint16_t i = 1 ; i < matrix->lines ; i++ )/*testa se é triangular inferior*/
+    for( uint16_t i = 1 ; i < matrix->rows ; i++ )/*testa se é triangular inferior*/
     {
         for( uint16_t j = 0 ; j < i; j++ )
         {
             /*se pelo menos um elemento abaixo da diagonal principal for != 0 a matriz não é triangular inferior*/
-            if(  *( matrix->elements + i * matrix->lines + j ) )
+            if(  *( matrix->elements + i * matrix->rows + j ) )
             {
                 return false;
             }
@@ -333,12 +361,28 @@ double BGM_diagonalProduct( BGM_matrix_t *matrix )
 {
     double product = 1.0;
     
-    /*verifico se o o produto em determinant é nulo, caso seja, saio do loop 
+    /*verifico se o o produto é nulo, caso seja, saio do loop 
     porque todo o produto da diagonal será anulado de qualquer forma*/
-    for( uint16_t i = 0 ; i < matrix->lines && product != 0 ; i++ )
+    for( uint16_t i = 0 ; i < matrix->rows && product != 0 ; i++ )
     {
-        product *= *( matrix->elements + i * matrix->lines + i );
+        product *= *( matrix->elements + i * matrix->rows + i );
     }
     
     return product;
+}
+
+void BGM_scaleRow( BGM_matrix_t *matrix, double k,uint16_t row )
+{
+    for( uint16_t j = 0; j < matrix->columns; j++ )
+    {
+        *(matrix->elements + row *matrix->columns + j ) *= k;
+    }
+}
+
+void BGM_addRows( BGM_matrix_t *matrix, uint16_t rowDest, uint16_t rowSource )
+{
+    for( uint16_t j = 0; j < matrix->columns; j++ )
+    {
+        *(matrix->elements + rowDest *matrix->columns + j ) += *(matrix->elements + rowSource *matrix->columns + j );
+    }
 }

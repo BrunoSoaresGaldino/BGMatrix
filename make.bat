@@ -1,2 +1,2 @@
 
-gcc src/*.c -o  bin/main.exe
+gcc src/*.c -o  bin/main.exe -Wall
